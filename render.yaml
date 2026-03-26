@@ -2,7 +2,7 @@ services:
   - type: web
     name: knowgap-backend
     env: docker
-    rootDir: knowgap
+    rootDir: backend
     dockerfilePath: ./Dockerfile
     autoDeploy: true
     healthCheckPath: /api/home

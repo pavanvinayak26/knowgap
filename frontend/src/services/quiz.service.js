@@ -48,6 +48,22 @@ const getWeakPractice = (limit = 8) => {
   return axios.get(API_URL + `attempts/practice/weak?limit=${limit}`, { headers: authHeader() });
 };
 
+const getLearnedSubjects = () => {
+  return axios.get(API_URL + "attempts/learned/subjects", { headers: authHeader() });
+};
+
+const getRecallCheck = (subjectId, limit = 8) => {
+  return axios.get(API_URL + `attempts/recall/subject/${subjectId}?limit=${limit}`, { headers: authHeader() });
+};
+
+const submitRecallAttempt = (payload) => {
+  return axios.post(API_URL + "attempts/recall/submit", payload, { headers: authHeader() });
+};
+
+const getRecallHistory = (limit = 6) => {
+  return axios.get(API_URL + `attempts/recall/history?limit=${limit}`, { headers: authHeader() });
+};
+
 const addSubject = (subject) => {
   return axios.post(API_URL + "subjects", subject, { headers: authHeader() });
 };
@@ -71,6 +87,10 @@ const QuizService = {
   getAttemptHistory,
   getAttemptReview,
   getWeakPractice,
+  getLearnedSubjects,
+  getRecallCheck,
+  submitRecallAttempt,
+  getRecallHistory,
   addSubject,
   addTopic,
   addQuestion

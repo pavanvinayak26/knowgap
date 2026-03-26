@@ -44,14 +44,6 @@ public class HuggingFaceChatService {
             return new AiChatResponse("Please enter a message to chat.", PROVIDER, model);
         }
 
-        if (safe(token).isBlank()) {
-            return new AiChatResponse(
-                    "Hugging Face token is not configured. Set knowgap.ai.huggingface.token in application.properties.",
-                    PROVIDER,
-                    model
-            );
-        }
-
         String prompt = buildPrompt(request, message);
 
         try {
@@ -63,20 +55,24 @@ public class HuggingFaceChatService {
                             .put("return_full_text", false))
                     .toString();
 
-            HttpRequest httpRequest = HttpRequest.newBuilder()
+                HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                     .uri(URI.create(baseUrl + "/" + model))
                     .timeout(Duration.ofSeconds(35))
                     .header("Content-Type", "application/json")
-                    .header("Authorization", "Bearer " + token.trim())
-                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
-                    .build();
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody));
+
+                if (!safe(token).isBlank()) {
+                requestBuilder.header("Authorization", "Bearer " + token.trim());
+                }
+
+                HttpRequest httpRequest = requestBuilder.build();
 
             HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() >= 400) {
                 return new AiChatResponse(
-                        "Hugging Face API error (" + response.statusCode() + "). Please verify token/model and retry.",
-                        PROVIDER,
-                        model
+                        localTutorFallback(request, message),
+                        "KnowGap Local Tutor",
+                        "offline-fallback"
                 );
             }
 
@@ -88,10 +84,49 @@ public class HuggingFaceChatService {
             return new AiChatResponse(generated.trim(), PROVIDER, model);
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
-            return new AiChatResponse("Unable to reach Hugging Face right now. Please retry.", PROVIDER, model);
+            return new AiChatResponse(localTutorFallback(request, message), "KnowGap Local Tutor", "offline-fallback");
         } catch (IOException ex) {
-            return new AiChatResponse("Unable to reach Hugging Face right now. Please retry.", PROVIDER, model);
+            return new AiChatResponse(localTutorFallback(request, message), "KnowGap Local Tutor", "offline-fallback");
         }
+    }
+
+    private String localTutorFallback(AiChatRequest request, String message) {
+        String subject = safe(request.getSubjectName());
+        String level = safe(request.getCurrentLevel());
+        String lower = message.toLowerCase();
+
+        StringBuilder response = new StringBuilder();
+        response.append("Cloud AI is temporarily unavailable, so I am using local tutor mode. ");
+
+        if (!subject.isBlank()) {
+            response.append("Subject: ").append(subject).append(". ");
+        }
+        if (!level.isBlank()) {
+            response.append("Level: ").append(level).append(". ");
+        }
+
+        if (containsAny(lower, "code", "coding", "python", "java", "program")) {
+            response.append("Start with one core concept, then solve 3 small coding problems in increasing difficulty. ")
+                    .append("For each problem: write expected output, code, then dry-run once to catch logic mistakes.");
+        } else if (containsAny(lower, "math", "algebra", "calculus", "statistics")) {
+            response.append("Use this sequence: formula recap (5 min), 2 solved examples, then 5 timed practice questions. ")
+                    .append("After each question, verify units/signs and recompute once to reduce calculation errors.");
+        } else {
+            response.append("Break the topic into 3 modules: fundamentals, applied practice, and revision. ")
+                    .append("Do short quizzes after each module and revisit weak points within 24 hours.");
+        }
+
+        response.append(" You can still click Generate Learning Plan to create subject-specific topics and quizzes.");
+        return response.toString();
+    }
+
+    private boolean containsAny(String text, String... words) {
+        for (String word : words) {
+            if (text.contains(word)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String buildPrompt(AiChatRequest request, String message) {

@@ -2,21 +2,30 @@ package com.knowgap.knowgap.controller;
 
 import com.knowgap.knowgap.model.Question;
 import com.knowgap.knowgap.model.QuizAttempt;
+import com.knowgap.knowgap.model.RecallAttempt;
+import com.knowgap.knowgap.model.Subject;
 import com.knowgap.knowgap.model.Topic;
 import com.knowgap.knowgap.model.User;
 import com.knowgap.knowgap.model.UserAnswer;
 import com.knowgap.knowgap.payload.request.SubmitAttemptRequest;
+import com.knowgap.knowgap.payload.request.SubmitRecallAttemptRequest;
 import com.knowgap.knowgap.payload.response.AttemptInsightsResponse;
 import com.knowgap.knowgap.payload.response.AttemptResultResponse;
 import com.knowgap.knowgap.payload.response.AttemptSummaryResponse;
 import com.knowgap.knowgap.payload.response.HeatmapResponse;
+import com.knowgap.knowgap.payload.response.LearnedSubjectSummaryResponse;
 import com.knowgap.knowgap.payload.response.PracticeQuestionResponse;
 import com.knowgap.knowgap.payload.response.PracticeSetResponse;
 import com.knowgap.knowgap.payload.response.QuestionReviewResponse;
+import com.knowgap.knowgap.payload.response.RecallAttemptSummaryResponse;
+import com.knowgap.knowgap.payload.response.RecallCheckResponse;
+import com.knowgap.knowgap.payload.response.RecallQuestionResponse;
 import com.knowgap.knowgap.payload.response.TopicTrendResponse;
 import com.knowgap.knowgap.payload.response.WeakTopicResponse;
 import com.knowgap.knowgap.repository.QuestionRepository;
 import com.knowgap.knowgap.repository.QuizAttemptRepository;
+import com.knowgap.knowgap.repository.RecallAttemptRepository;
+import com.knowgap.knowgap.repository.SubjectRepository;
 import com.knowgap.knowgap.repository.TopicRepository;
 import com.knowgap.knowgap.repository.UserAnswerRepository;
 import com.knowgap.knowgap.repository.UserRepository;
@@ -37,10 +46,13 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @RestController
@@ -66,6 +78,12 @@ public class AttemptController {
 
     @Autowired
     private TopicRepository topicRepository;
+
+    @Autowired
+    private SubjectRepository subjectRepository;
+
+    @Autowired
+    private RecallAttemptRepository recallAttemptRepository;
 
     private User validateUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -221,6 +239,184 @@ public class AttemptController {
                 .collect(Collectors.joining(", "));
 
         return ResponseEntity.ok(new PracticeSetResponse(focusReason, practiceQuestions));
+    }
+
+    @GetMapping("/learned/subjects")
+    public ResponseEntity<List<LearnedSubjectSummaryResponse>> getLearnedSubjects() {
+        User user = validateUser();
+        List<QuizAttempt> attempts = quizAttemptRepository.findByUserIdOrderByAttemptDateDesc(user.getId());
+
+        Map<Long, SubjectAggregate> subjectStats = new LinkedHashMap<>();
+        for (QuizAttempt attempt : attempts) {
+            if (attempt.getTopic() == null || attempt.getTopic().getSubject() == null) {
+                continue;
+            }
+
+            Long subjectId = attempt.getTopic().getSubject().getId();
+            String subjectName = attempt.getTopic().getSubject().getName();
+
+            SubjectAggregate aggregate = subjectStats.computeIfAbsent(
+                    subjectId,
+                    key -> new SubjectAggregate(subjectId, subjectName)
+            );
+
+            aggregate.attemptsCount++;
+            aggregate.totalQuestions += attempt.getTotalQuestions();
+            aggregate.totalCorrect += attempt.getScore();
+            aggregate.learnedTopicIds.add(attempt.getTopic().getId());
+            if (aggregate.lastAttemptAt == null || aggregate.lastAttemptAt.isBefore(attempt.getAttemptDate())) {
+                aggregate.lastAttemptAt = attempt.getAttemptDate();
+            }
+        }
+
+        List<LearnedSubjectSummaryResponse> response = subjectStats.values().stream()
+                .map(stat -> new LearnedSubjectSummaryResponse(
+                        stat.subjectId,
+                        stat.subjectName,
+                        stat.learnedTopicIds.size(),
+                        stat.attemptsCount,
+                        stat.totalQuestions == 0 ? 0.0 : roundToOneDecimal((stat.totalCorrect * 100.0) / stat.totalQuestions),
+                        stat.lastAttemptAt
+                ))
+                .sorted(Comparator.comparing(LearnedSubjectSummaryResponse::getLastAttemptAt).reversed())
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/recall/subject/{subjectId}")
+    public ResponseEntity<RecallCheckResponse> getSubjectRecallCheck(
+            @PathVariable Long subjectId,
+            @RequestParam(defaultValue = "8") Integer limit
+    ) {
+        User user = validateUser();
+        int boundedLimit = Math.max(4, Math.min(limit, 12));
+
+        List<QuizAttempt> attempts = quizAttemptRepository.findByUserIdOrderByAttemptDateDesc(user.getId())
+                .stream()
+                .filter(attempt -> attempt.getTopic() != null
+                        && attempt.getTopic().getSubject() != null
+                        && subjectId.equals(attempt.getTopic().getSubject().getId()))
+                .collect(Collectors.toList());
+
+        Set<Long> topicIds = new HashSet<>();
+        Set<String> learnedTopics = new LinkedHashSet<>();
+        String subjectName = null;
+
+        for (QuizAttempt attempt : attempts) {
+            topicIds.add(attempt.getTopic().getId());
+            learnedTopics.add(attempt.getTopic().getName());
+            if (subjectName == null) {
+                subjectName = attempt.getTopic().getSubject().getName();
+            }
+        }
+
+        if (topicIds.isEmpty()) {
+            List<Topic> subjectTopics = topicRepository.findBySubjectId(subjectId);
+            for (Topic topic : subjectTopics) {
+                topicIds.add(topic.getId());
+            }
+            if (!subjectTopics.isEmpty()) {
+                subjectName = subjectTopics.get(0).getSubject().getName();
+            }
+        }
+
+        List<RecallQuestionResponse> questions = Collections.emptyList();
+        if (!topicIds.isEmpty()) {
+            List<Question> candidateQuestions = questionRepository.findByTopicIdIn(new ArrayList<>(topicIds));
+            Collections.shuffle(candidateQuestions);
+            questions = candidateQuestions.stream()
+                    .limit(boundedLimit)
+                .map(q -> new RecallQuestionResponse(
+                            q.getId(),
+                            q.getText(),
+                            q.getOptionA(),
+                            q.getOptionB(),
+                            q.getOptionC(),
+                            q.getOptionD(),
+                    q.getCorrectOption(),
+                            q.getTopic().getId(),
+                            q.getTopic().getName()
+                    ))
+                    .collect(Collectors.toList());
+        }
+
+        String prompt = learnedTopics.isEmpty()
+                ? "You have not attempted this subject yet. Try this recall set to build baseline memory."
+                : "Recall check based on what you learned in: " + String.join(", ", learnedTopics);
+
+        return ResponseEntity.ok(new RecallCheckResponse(
+                subjectId,
+                subjectName == null ? "Selected Subject" : subjectName,
+                prompt,
+                new ArrayList<>(learnedTopics),
+                questions
+        ));
+    }
+
+    @PostMapping("/recall/submit")
+    public ResponseEntity<?> submitRecallAttempt(@RequestBody SubmitRecallAttemptRequest request) {
+        try {
+            User user = validateUser();
+            Subject subject = subjectRepository.findById(request.getSubjectId())
+                    .orElseThrow(() -> new RuntimeException("Subject not found"));
+
+            Map<Long, String> answers = request.getAnswers() == null ? Collections.emptyMap() : request.getAnswers();
+            if (answers.isEmpty()) {
+                return ResponseEntity.badRequest().body("Please answer at least one recall question.");
+            }
+
+            Set<Long> subjectTopicIds = topicRepository.findBySubjectId(subject.getId()).stream()
+                    .map(Topic::getId)
+                    .collect(Collectors.toSet());
+
+            List<Question> validQuestions = questionRepository.findAllById(answers.keySet()).stream()
+                    .filter(q -> q.getTopic() != null && subjectTopicIds.contains(q.getTopic().getId()))
+                    .collect(Collectors.toList());
+
+            if (validQuestions.isEmpty()) {
+                return ResponseEntity.badRequest().body("No valid recall questions were submitted for this subject.");
+            }
+
+            int score = 0;
+            for (Question question : validQuestions) {
+                String selected = normalizeOption(answers.get(question.getId()));
+                if (selected != null && selected.equalsIgnoreCase(normalizeOption(question.getCorrectOption()))) {
+                    score++;
+                }
+            }
+
+            int total = validQuestions.size();
+            double accuracy = total == 0 ? 0.0 : roundToOneDecimal((score * 100.0) / total);
+
+            RecallAttempt recallAttempt = new RecallAttempt();
+            recallAttempt.setUser(user);
+            recallAttempt.setSubject(subject);
+            recallAttempt.setScore(score);
+            recallAttempt.setTotalQuestions(total);
+            recallAttempt.setAccuracy(accuracy);
+            recallAttempt.setRememberedNotes(fallback(request.getRememberedNotes(), ""));
+            recallAttempt.setRustyNotes(fallback(request.getRustyNotes(), ""));
+
+            RecallAttempt saved = recallAttemptRepository.save(recallAttempt);
+            return ResponseEntity.ok(toRecallSummary(saved));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("Failed to submit recall attempt: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/recall/history")
+    public ResponseEntity<List<RecallAttemptSummaryResponse>> getRecallHistory(@RequestParam(defaultValue = "6") Integer limit) {
+        User user = validateUser();
+        int boundedLimit = Math.max(1, Math.min(limit, 20));
+
+        List<RecallAttemptSummaryResponse> history = recallAttemptRepository.findByUserIdOrderByAttemptDateDesc(user.getId())
+                .stream()
+                .limit(boundedLimit)
+                .map(this::toRecallSummary)
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(history);
     }
 
     private AttemptResultResponse buildAttemptResultResponse(QuizAttempt attempt, List<UserAnswer> answers, String message) {
@@ -441,6 +637,20 @@ public class AttemptController {
         );
     }
 
+    private RecallAttemptSummaryResponse toRecallSummary(RecallAttempt attempt) {
+        return new RecallAttemptSummaryResponse(
+                attempt.getId(),
+                attempt.getSubject().getId(),
+                attempt.getSubject().getName(),
+                attempt.getScore(),
+                attempt.getTotalQuestions(),
+                attempt.getAccuracy(),
+                attempt.getRememberedNotes(),
+                attempt.getRustyNotes(),
+                attempt.getAttemptDate()
+        );
+    }
+
     private String gradeForAccuracy(double accuracy) {
         if (accuracy >= 90) {
             return "A";
@@ -535,6 +745,26 @@ public class AttemptController {
             this.topicName = topicName;
             this.attempted = 0;
             this.correct = 0;
+        }
+    }
+
+    private static class SubjectAggregate {
+        private final Long subjectId;
+        private final String subjectName;
+        private final Set<Long> learnedTopicIds;
+        private int attemptsCount;
+        private int totalQuestions;
+        private int totalCorrect;
+        private java.time.LocalDateTime lastAttemptAt;
+
+        private SubjectAggregate(Long subjectId, String subjectName) {
+            this.subjectId = subjectId;
+            this.subjectName = subjectName;
+            this.learnedTopicIds = new HashSet<>();
+            this.attemptsCount = 0;
+            this.totalQuestions = 0;
+            this.totalCorrect = 0;
+            this.lastAttemptAt = null;
         }
     }
 }

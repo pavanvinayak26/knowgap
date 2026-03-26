@@ -20,6 +20,7 @@ const AiTutor = () => {
   const [error, setError] = useState("");
   const [plan, setPlan] = useState(null);
   const [remediationPlan, setRemediationPlan] = useState(null);
+  const [aiInfo, setAiInfo] = useState({ provider: "", model: "" });
   const [messages, setMessages] = useState([
     {
       role: "assistant",
@@ -99,6 +100,10 @@ const AiTutor = () => {
         currentLevel
       });
 
+      setAiInfo({
+        provider: response?.data?.provider || "",
+        model: response?.data?.model || ""
+      });
       appendAssistantMessage(response?.data?.reply || "I could not generate a response right now. Please retry.");
       setChatInput("");
     } catch (err) {
@@ -161,6 +166,26 @@ const AiTutor = () => {
         <p style={{ color: "var(--text-secondary)", marginBottom: "1.5rem" }}>
           Chat with AI about any subject. It will build your full curriculum, create topics, and prepare quizzes automatically.
         </p>
+
+        {aiInfo.provider ? (
+          <div
+            style={{
+              marginBottom: "1rem",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              padding: "0.35rem 0.7rem",
+              borderRadius: "999px",
+              border: "1px solid var(--glass-border)",
+              background: "rgba(255,255,255,0.04)",
+              fontSize: "0.8rem",
+              color: "var(--text-secondary)"
+            }}
+          >
+            <span>AI Provider: <strong style={{ color: "#c7d2fe" }}>{aiInfo.provider}</strong></span>
+            {aiInfo.model ? <span>| Model: <strong style={{ color: "#c7d2fe" }}>{aiInfo.model}</strong></span> : null}
+          </div>
+        ) : null}
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", marginBottom: "1.5rem" }}>
           {QUICK_PROMPTS.map((prompt) => (

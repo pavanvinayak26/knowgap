@@ -84,6 +84,13 @@ const Subjects = () => {
                             >
                                 <h4 style={{ margin: '0 0 0.5rem 0', color: selectedSubject?.id === subject.id ? 'var(--primary)' : 'white' }}>{subject.name}</h4>
                                 <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineBreak: 'anywhere' }}>{subject.description}</p>
+                                <div style={{ marginTop: '0.7rem' }}>
+                                    <Link to={`/recall/${subject.id}`} onClick={(e) => e.stopPropagation()}>
+                                        <button className="btn-primary" style={{ width: 'auto', padding: '0.45rem 0.85rem', fontSize: '0.8rem' }}>
+                                            Check What I Remember
+                                        </button>
+                                    </Link>
+                                </div>
                             </div>
                         ))}
                     </div>

@@ -14,6 +14,8 @@ const Dashboard = () => {
     topicTrends: [],
     recentAttempts: []
   });
+  const [learnedSubjects, setLearnedSubjects] = useState([]);
+  const [recallHistory, setRecallHistory] = useState([]);
 
   useEffect(() => {
     const user = AuthService.getCurrentUser();
@@ -24,9 +26,11 @@ const Dashboard = () => {
 
     setCurrentUser(user);
 
-    QuizService.getInsights().then(
-      (response) => {
-        setInsights(response.data || { heatmap: [], weakTopics: [], topicTrends: [], recentAttempts: [] });
+    Promise.all([QuizService.getInsights(), QuizService.getLearnedSubjects(), QuizService.getRecallHistory(6)]).then(
+      ([insightsRes, learnedRes, recallRes]) => {
+        setInsights(insightsRes.data || { heatmap: [], weakTopics: [], topicTrends: [], recentAttempts: [] });
+        setLearnedSubjects(learnedRes.data || []);
+        setRecallHistory(recallRes.data || []);
         setLoading(false);
       },
       (err) => {
@@ -55,6 +59,56 @@ const Dashboard = () => {
         </p>
 
         <div className="dashboard-grid">
+          <div className="admin-card" style={{ gridColumn: "span 2" }}>
+            <h3 style={{ marginBottom: "0.8rem" }}>What You Learned Till Now</h3>
+            {loading ? (
+              <p style={{ color: "var(--text-dim)" }}>Loading learned subjects...</p>
+            ) : learnedSubjects.length === 0 ? (
+              <p style={{ color: "var(--text-dim)" }}>No learned history yet. Complete a few quizzes and this section will auto-fill.</p>
+            ) : (
+              <div style={{ display: "grid", gap: "0.75rem" }}>
+                {learnedSubjects.map((subject) => (
+                  <div key={subject.subjectId} className="admin-card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", background: "rgba(255,255,255,0.03)" }}>
+                    <div>
+                      <p style={{ margin: "0 0 0.3rem 0", fontWeight: "700" }}>{subject.subjectName}</p>
+                      <p style={{ margin: 0, color: "var(--text-secondary)", fontSize: "0.85rem" }}>
+                        Topics learned: {subject.topicsLearned} | Attempts: {subject.attemptsCount} | Avg accuracy: {subject.averageAccuracy}%
+                      </p>
+                    </div>
+                    <Link to={`/recall/${subject.subjectId}`}>
+                      <button className="btn-primary" style={{ width: "auto", padding: "0.55rem 1rem" }}>Recall Check</button>
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="admin-card" style={{ gridColumn: "span 2" }}>
+            <h3 style={{ marginBottom: "0.8rem" }}>Recent Recall Checks</h3>
+            {loading ? (
+              <p style={{ color: "var(--text-dim)" }}>Loading recall history...</p>
+            ) : recallHistory.length === 0 ? (
+              <p style={{ color: "var(--text-dim)" }}>No recall checks submitted yet.</p>
+            ) : (
+              <div style={{ display: "grid", gap: "0.7rem" }}>
+                {recallHistory.map((item) => (
+                  <div key={item.attemptId} className="admin-card" style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "center", background: "rgba(255,255,255,0.03)" }}>
+                    <div>
+                      <p style={{ margin: "0 0 0.25rem 0", fontWeight: "700" }}>{item.subjectName}</p>
+                      <p style={{ margin: 0, color: "var(--text-secondary)", fontSize: "0.85rem" }}>
+                        {item.score}/{item.totalQuestions} | {item.accuracy}% | {new Date(item.attemptedAt).toLocaleString()}
+                      </p>
+                    </div>
+                    <Link to={`/recall/${item.subjectId}`}>
+                      <button className="btn-primary" style={{ width: "auto", padding: "0.5rem 0.9rem" }}>Retake Recall</button>
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="admin-card" style={{ gridColumn: "span 2" }}>
             <h3 style={{ marginBottom: "1rem" }}>Knowledge Synthesis Heatmap</h3>
             {loading ? (

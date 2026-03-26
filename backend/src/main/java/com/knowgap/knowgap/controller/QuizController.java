@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -26,6 +27,7 @@ public class QuizController {
     @GetMapping("/topic/{topicId}")
     public ResponseEntity<List<QuestionResponse>> getQuestionsForTopic(@PathVariable Long topicId) {
         List<Question> questions = questionRepository.findByTopicId(topicId);
+        Collections.shuffle(questions);
         
         List<QuestionResponse> response = questions.stream()
                 .map(q -> new QuestionResponse(q.getId(), q.getText(), q.getOptionA(), q.getOptionB(), q.getOptionC(), q.getOptionD()))

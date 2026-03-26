@@ -8,8 +8,10 @@ import Home from "./components/Home";
 import Dashboard from "./components/Dashboard";
 import Subjects from "./components/Subjects";
 import Quiz from "./components/Quiz";
+import RecallCheck from "./components/RecallCheck";
 import AdminDashboard from "./components/AdminDashboard";
 import AiTutor from "./components/AiTutor";
+import ChatbotWidget from "./components/ChatbotWidget";
 import "./App.css";
 
 const App = () => {
@@ -90,8 +92,10 @@ const App = () => {
             <Route path="/subjects" element={<Subjects />} />
             <Route path="/ai-tutor" element={<AiTutor />} />
             <Route path="/quiz/:topicId" element={<Quiz />} />
+            <Route path="/recall/:subjectId" element={<RecallCheck />} />
             <Route path="/admin" element={<AdminDashboard />} />
           </Routes>
+          <ChatbotWidget />
         </div>
       </div>
     </Router>

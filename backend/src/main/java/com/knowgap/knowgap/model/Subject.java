@@ -1,5 +1,6 @@
 package com.knowgap.knowgap.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -20,4 +21,9 @@ public class Subject {
 
     @Column(columnDefinition = "TEXT")
     private String description;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "created_by")
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+    private User createdBy;
 }
