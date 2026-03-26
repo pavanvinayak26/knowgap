@@ -11,6 +11,6 @@ RUN if [ -f "pom.xml" ]; then \
 			echo "No pom.xml found in build context" && exit 1; \
 		fi
 
-FROM openjdk:21-jdk-slim
+FROM eclipse-temurin:21-jre-jammy
 COPY --from=build /app/app.jar /app.jar
 ENTRYPOINT ["java","-jar","/app.jar"]
